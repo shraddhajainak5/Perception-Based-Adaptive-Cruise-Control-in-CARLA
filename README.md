@@ -1,4 +1,4 @@
-Mini-Project 2: Perception-based Adaptive Cruise Control in CARLA
+Perception-based Adaptive Cruise Control in CARLA
 =========================================
 
 ## Overview
