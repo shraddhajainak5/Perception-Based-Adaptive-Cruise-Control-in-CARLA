@@ -1,0 +1,86 @@
+Bootstrap: docker
+From: carlasim/carla:0.9.15
+
+%labels
+    Author anandbal@usc.edu
+    Version v0.0.1
+
+%help
+    This is a container to run the Mini-Project 1: Adaptive Cruise Control in CARLA for
+    CSCI513.
+
+%setup
+  curl -C - -SL https://tiny.carla.org/additional-maps-0-9-15-linux -o AdditionalMaps_0.9.15.tar.gz
+
+%files
+  AdditionalMaps_0.9.15.tar.gz /scif/data/additionalmaps.tar.gz
+
+%post
+  apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+  
+  apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    curl xdg-user-dirs libomp5 vulkan-utils mesa-utils
+  apt-get clean
+
+%environment
+  # unset SDL_VIDEODRIVER
+
+###################
+# CARLA Simulator #
+###################
+
+%appinstall carla_sim
+  cd /home/carla
+  tar --keep-newer-files --totals -xf /scif/data/additionalmaps.tar.gz
+
+  # Remove chmod from the launch script
+  # cp /scif/data/CarlaUE4.sh ./CarlaUE4.sh
+
+%startscript
+    cd /home/carla
+    # Use nohup and /dev/null to completely detach server process from terminal
+    nohup ./CarlaUE4.sh -vulkan -RenderOffScreen -nosound
+
+
+####################
+# Python simulator #
+####################
+
+%appinstall mp1a
+  curl -sSL https://micromamba.snakepit.net/api/micromamba/linux-64/latest \
+    | tar -xvj bin/micromamba
+
+  export MAMBA_ROOT_PREFIX=/scif/data/micromamba
+  export MAMBA_EXE=$(pwd)/bin/micromamba
+
+  ./bin/micromamba shell init -q -s bash -p $MAMBA_ROOT_PREFIX
+
+  echo "export MAMBA_ROOT_PREFIX=${MAMBA_ROOT_PREFIX}" >> $SINGULARITY_ENVIRONMENT
+  echo "export MAMBA_EXE=${MAMBA_EXE}" >> $SINGULARITY_ENVIRONMENT
+  echo "export PATH=\"${MAMBA_ROOT_PREFIX}/bin:$PATH\"" >> $SINGULARITY_ENVIRONMENT
+  
+  # Put the Conda initialization script in a file for lazy loading/
+	# Singularity does all the environment sourcing as shell (only latter calls bash),
+	# which conda does not support.
+	# We put the content in a file, manually call bash, and source it.
+	{
+		echo 'eval "$(' "'${MAMBA_ROOT_PREFIX}/bin/conda' 'shell.bash' 'hook' 2> /dev/null" ')"'
+		echo 'if [ $? -eq 0 ]; then'
+		echo '  eval "$__conda_setup"'
+		echo 'else'
+		echo '  if [ -f ' "'${MAMBA_ROOT_PREFIX}/etc/profile.d/conda.sh'" ']; then'
+		echo '    .' "'${MAMBA_ROOT_PREFIX}/opt/mamba/etc/profile.d/conda.sh'"
+		echo '  else'
+		echo '    export PATH="/opt/mamba/bin:$PATH"'
+		echo '  fi'
+		echo 'fi'
+		echo 'unset __conda_setup'
+	} >> ${MAMBA_ROOT_PREFIX}/init.bash
+
+
+	# Execute the post.bash script.
+	# Use bash to properly activate the conda environment and install packages.
+	# Other command such as cmake, pip, etc are better run inside the post.bash file so that they can
+	# Conda libraries.
+	echo 'source' "'${MAMBA_ROOT_PREFIX}/init.bash'" | bash
